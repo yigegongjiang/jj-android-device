@@ -11,7 +11,7 @@ use crate::device;
 use crate::report::{self, EventLog, Metrics, StartupSummary, State};
 use crate::session::{self, PidGuard};
 use crate::sink::{self, Msg};
-use crate::{adb, collector, profile};
+use crate::{adb, collector, procmap, profile};
 
 /// collector -> sink 的有界通道容量：足够吸收突发，又对写盘阻塞形成背压。
 const CHANNEL_CAP: usize = 16_384;
@@ -114,8 +114,10 @@ pub async fn run(args: LogsArgs) -> Result<()> {
         events.emit("buffer_expand_failed", &format!("detail={expand_note:?}")).await?;
     }
 
-    // 11. 拉起任务：sink / 周期心跳 / 信号
-    let sink_handle = tokio::spawn(sink::run(rx, log_file, heartbeat, metrics.clone()));
+    // 11. 拉起任务：进程名轮询 / sink / 周期心跳 / 信号
+    // procmap 先起,让 sink 落盘时尽早能把 pid 反查为进程名
+    let (procmap_rx, procmap_handle) = procmap::spawn(serial.clone(), sd_rx.clone());
+    let sink_handle = tokio::spawn(sink::run(rx, log_file, heartbeat, metrics.clone(), procmap_rx));
     let status_handle = tokio::spawn(report::status_task(
         metrics.clone(),
         Duration::from_secs(STATUS_INTERVAL_SECS),
@@ -129,6 +131,7 @@ pub async fn run(args: LogsArgs) -> Result<()> {
     let _ = sd_tx.send(true);
     let sink_res = sink_handle.await.context("sink 任务 join 失败")?;
     let _ = status_handle.await;
+    let _ = procmap_handle.await;
     metrics.set_state(State::Stopped);
 
     // 14. 退出事件（含最终统计）

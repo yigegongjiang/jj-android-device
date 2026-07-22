@@ -9,6 +9,7 @@ mod collector;
 mod device;
 mod logs;
 mod netwatch;
+mod procmap;
 mod profile;
 mod report;
 mod screenshot;

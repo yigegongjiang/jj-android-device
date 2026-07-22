@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use chrono::{Local, TimeZone};
+
 /// 字节数格式化为人类可读（B / KiB / MiB / GiB）。
 pub fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -50,6 +52,17 @@ pub fn ms_to_epoch_str(ms: i64) -> String {
     ms_to_logcat_arg(ms)
 }
 
+/// 设备 epoch 毫秒 -> 本机本地时区的 `YYYY-MM-DD HH:MM:SS.mmm`（用于落盘日志行）。
+///
+/// epoch 为绝对时刻（UTC），此处按本机本地时区渲染，便于人直接阅读；无法表示的
+/// 极端值降级为 `sec.mmm` 原样,不 panic。
+pub fn ms_to_local(ms: i64) -> String {
+    match Local.timestamp_millis_opt(ms) {
+        chrono::LocalResult::Single(dt) => dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+        _ => ms_to_logcat_arg(ms),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +88,20 @@ mod tests {
         assert_eq!(ms_to_logcat_arg(1784689028000), "1784689028.000");
         assert_eq!(ms_to_logcat_arg(1784689028022), "1784689028.022");
         assert_eq!(ms_to_logcat_arg(1784689028205), "1784689028.205");
+    }
+
+    #[test]
+    fn local_ts_shape() {
+        // 本地时区因环境而异,仅校验格式形状 `YYYY-MM-DD HH:MM:SS.mmm`（长度 23）。
+        let s = ms_to_local(1784689028205);
+        assert_eq!(s.len(), 23, "got {s:?}");
+        let b = s.as_bytes();
+        assert_eq!(b[4], b'-');
+        assert_eq!(b[7], b'-');
+        assert_eq!(b[10], b' ');
+        assert_eq!(b[13], b':');
+        assert_eq!(b[16], b':');
+        assert_eq!(b[19], b'.');
+        assert!(s.ends_with("205"), "millis preserved: {s:?}");
     }
 }

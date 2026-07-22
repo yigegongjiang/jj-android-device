@@ -7,6 +7,16 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.5.0] - 2026-07-22
+
+### Changed
+
+- 落盘 logcat 行改为可读格式：本地时间 + `pid-tid` + 进程名（对齐主流 Logcat 视图），不再是原始 epoch 与裸 pid/tid 数字
+  - `-v epoch` 拉流与 `sink::LineRouter`/`parse_ts_ms` 去重水位仍解析原始行（不受影响）；仅写盘瞬间 `sink::enrich` 改写：`util::ms_to_local` 转本地时间 + `procmap` 快照反查 pid→进程名，`parse_line` 失败原样落盘
+  - 新增 `procmap.rs`：`ps -A -o PID,NAME` 周期快照（`watch`，10s，best-effort，失败沿用旧快照），读端克隆 `Arc` 零竞争；`parse_ts_ms` 抽出共享数值核 `parse_epoch_token`（行为等价）
+- 短命进程（采集时已退出）无法反查进程名时以 `?` 占位，时间戳与消息不受影响
+  - `enrich` 查不到 pid 即占位 `?`；进程名随下一轮 `ps` 快照补齐，消息体非 UTF-8 字节逐字节保留
+
 ## [0.4.0] - 2026-07-22
 
 ### Added

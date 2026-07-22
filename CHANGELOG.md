@@ -11,6 +11,13 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.5.0] - 2026-07-22
+
+### Changed
+
+- 落盘 logcat 行改为可读格式：本地时间 + `pid-tid` + 进程名（对齐主流 Logcat 视图），不再是原始 epoch 与裸 pid/tid 数字
+- 短命进程（采集时已退出）无法反查进程名时以 `?` 占位，时间戳与消息不受影响
+
 ## [0.4.0] - 2026-07-22
 
 ### Added

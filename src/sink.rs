@@ -3,15 +3,18 @@
 //! 去重是本工具「防倒灌 + 抖动缓冲」的正确性核心，抽为纯状态机 [`LineRouter`]
 //! 便于单测。IO（写盘 / 心跳 mtime / flush 时机）在 [`run`] 任务里处理。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc::{self, error::TryRecvError};
+use tokio::sync::watch;
 
+use crate::procmap::Snapshot;
 use crate::report::Metrics;
+use crate::util;
 
 /// collector -> sink 的通道消息。
 pub enum Msg {
@@ -133,7 +136,13 @@ fn parse_ts_ms(line: &[u8]) -> Option<i64> {
         .iter()
         .position(|&b| b == b' ' || b == b'\t' || b == b'\r' || b == b'\n')
         .unwrap_or(rest.len());
-    let tok = &rest[..end];
+    parse_epoch_token(&rest[..end])
+}
+
+/// 解析单个 epoch token（`sec` 或 `sec.mmm`）为毫秒。非法/空返回 None。
+///
+/// 去重水位（[`parse_ts_ms`]）与落盘富化（[`parse_line`]）共用此数值核。
+fn parse_epoch_token(tok: &[u8]) -> Option<i64> {
     let (sec_b, frac_b) = match tok.iter().position(|&b| b == b'.') {
         Some(i) => (&tok[..i], &tok[i + 1..]),
         None => (tok, &b""[..]),
@@ -155,6 +164,95 @@ fn parse_ts_ms(line: &[u8]) -> Option<i64> {
     Some(sec * 1000 + millis)
 }
 
+/// `-v epoch` 行的结构拆解：epoch 毫秒 + pid/tid 原始字节 + tid 之后的余下字节。
+struct Parsed<'a> {
+    ms: i64,
+    pid: &'a [u8],
+    tid: &'a [u8],
+    /// 自 tid 之后到行尾（以「空格 + 级别 + tag: msg + 换行」开头），原样保留。
+    rest: &'a [u8],
+}
+
+/// 解析 `<epoch>  <pid>  <tid> <level> <tag>: msg` 为 [`Parsed`]。
+///
+/// 只接受行首为 epoch 且其后紧跟 pid、tid 两个数字段的规范行；续行/分隔行/任何
+/// 不符合的行返回 None，交由调用方原样落盘。
+fn parse_line(raw: &[u8]) -> Option<Parsed<'_>> {
+    let n = raw.len();
+    let mut i = 0;
+    while i < n && (raw[i] == b' ' || raw[i] == b'\t') {
+        i += 1;
+    }
+    // token1: epoch
+    let e0 = i;
+    while i < n && !matches!(raw[i], b' ' | b'\t' | b'\r' | b'\n') {
+        i += 1;
+    }
+    let ms = parse_epoch_token(&raw[e0..i])?;
+    // token2: pid（数字）
+    i = skip_spaces(raw, i)?;
+    let p0 = i;
+    while i < n && raw[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == p0 {
+        return None;
+    }
+    let pid = &raw[p0..i];
+    // token3: tid（数字）
+    i = skip_spaces(raw, i)?;
+    let t0 = i;
+    while i < n && raw[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == t0 {
+        return None;
+    }
+    let tid = &raw[t0..i];
+    Some(Parsed { ms, pid, tid, rest: &raw[i..] })
+}
+
+/// 跳过一段（至少一个）空格/制表符，返回新位置；无空白可跳则 None（行格式异常）。
+fn skip_spaces(raw: &[u8], mut i: usize) -> Option<usize> {
+    let start = i;
+    while i < raw.len() && (raw[i] == b' ' || raw[i] == b'\t') {
+        i += 1;
+    }
+    if i == start {
+        None
+    } else {
+        Some(i)
+    }
+}
+
+/// 落盘富化：把 `-v epoch` 原始行改写为
+/// `YYYY-MM-DD HH:MM:SS.mmm  pid-tid  进程名 <级别> <tag>: msg`。
+///
+/// - 仅当 [`parse_line`] 成功时改写；续行/分隔行/解析失败一律原样返回，绝不丢信息。
+/// - 消息体保持原始字节（可能非 UTF-8），只在行首拼接 ASCII 前缀；进程名查不到以
+///   `?` 占位（时间戳仍可读，进程名随下一轮 `ps` 快照补齐）。
+fn enrich(raw: &[u8], names: &HashMap<u32, String>) -> Vec<u8> {
+    let Some(p) = parse_line(raw) else {
+        return raw.to_vec();
+    };
+    let name = std::str::from_utf8(p.pid)
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .and_then(|pid| names.get(&pid))
+        .map(String::as_str)
+        .unwrap_or("?");
+    let mut out = Vec::with_capacity(raw.len() + 32);
+    out.extend_from_slice(util::ms_to_local(p.ms).as_bytes());
+    out.extend_from_slice(b"  ");
+    out.extend_from_slice(p.pid);
+    out.push(b'-');
+    out.extend_from_slice(p.tid);
+    out.extend_from_slice(b"  ");
+    out.extend_from_slice(name.as_bytes());
+    out.extend_from_slice(p.rest); // " <级别> <tag>: msg\n"，含原始换行
+    out
+}
+
 fn touch(heartbeat: &std::fs::File) -> Result<()> {
     heartbeat
         .set_modified(SystemTime::now())
@@ -167,6 +265,7 @@ pub async fn run(
     log_file: tokio::fs::File,
     heartbeat: std::fs::File,
     metrics: Arc<Metrics>,
+    procmap: watch::Receiver<Snapshot>,
 ) -> Result<()> {
     let mut writer = BufWriter::new(log_file);
     let mut router = LineRouter::new(metrics.last_log_ms());
@@ -189,11 +288,11 @@ pub async fn run(
             }
             msg = rx.recv() => {
                 let Some(m) = msg else { break 'outer };
-                handle(&mut writer, &mut router, &metrics, &mut dirty, m).await?;
+                handle(&mut writer, &mut router, &metrics, &mut dirty, &procmap, m).await?;
                 // 排空立即可取的消息，突发时批量写盘减少 flush 次数
                 loop {
                     match rx.try_recv() {
-                        Ok(m) => handle(&mut writer, &mut router, &metrics, &mut dirty, m).await?,
+                        Ok(m) => handle(&mut writer, &mut router, &metrics, &mut dirty, &procmap, m).await?,
                         Err(TryRecvError::Empty) => break,
                         Err(TryRecvError::Disconnected) => break 'outer,
                     }
@@ -216,14 +315,19 @@ async fn handle(
     router: &mut LineRouter,
     metrics: &Arc<Metrics>,
     dirty: &mut bool,
+    procmap: &watch::Receiver<Snapshot>,
     msg: Msg,
 ) -> Result<()> {
     match msg {
         Msg::Reconnecting => router.mark_reconnecting(),
         Msg::Line(buf) => {
+            // 去重/水位判定在原始行上进行（不受富化影响）
             if router.decide(&buf) == Decision::Write {
-                writer.write_all(&buf).await.context("写入会话日志失败")?;
-                metrics.record_line(buf.len());
+                // 克隆当前快照的 Arc（一次原子递增），避免跨 await 持有 watch 读锁
+                let snap = procmap.borrow().clone();
+                let out = enrich(&buf, &snap);
+                writer.write_all(&out).await.context("写入会话日志失败")?;
+                metrics.record_line(out.len());
                 metrics.set_last_log_ms(router.last_ms());
                 *dirty = true;
             }
@@ -298,5 +402,60 @@ mod tests {
         r.mark_reconnecting();
         assert_eq!(r.decide(&line("0.500", "old")), Decision::Drop); // <水位
         assert_eq!(r.decide(b"    tail of dropped\n"), Decision::Drop);
+    }
+
+    fn names() -> HashMap<u32, String> {
+        let mut m = HashMap::new();
+        m.insert(1040u32, "android.hardware.audio.service_64".to_string());
+        m
+    }
+
+    #[test]
+    fn enrich_known_pid() {
+        // 真机采样行：epoch + 双空格 + pid + tid + 级别 + tag: msg
+        let raw = b"         1784695527.474  1040  5062 D AGM: metadata_print: 92\n";
+        let out = enrich(raw, &names());
+        let s = String::from_utf8(out).unwrap();
+        // 本地时区不定，只校验结构：pid-tid、进程名、原始 tag/msg 尾部俱在
+        assert!(s.contains("  1040-5062  android.hardware.audio.service_64 D AGM: metadata_print: 92\n"), "got {s:?}");
+        assert!(!s.contains("1784695527.474"), "epoch 应被替换为本地时间: {s:?}");
+        assert!(s.ends_with('\n'));
+    }
+
+    #[test]
+    fn enrich_unknown_pid_placeholder() {
+        let raw = b"         1784695527.474  9999  9999 I Tag: hi\n";
+        let s = String::from_utf8(enrich(raw, &names())).unwrap();
+        assert!(s.contains("  9999-9999  ? I Tag: hi\n"), "got {s:?}");
+    }
+
+    #[test]
+    fn enrich_continuation_passthrough() {
+        // 无前导 epoch 的续行/异常行原样返回
+        let raw = b"    at com.foo.Bar.baz(Bar.java:1)\n";
+        assert_eq!(enrich(raw, &names()), raw.to_vec());
+        let divider = b"--------- beginning of main\n";
+        assert_eq!(enrich(divider, &names()), divider.to_vec());
+    }
+
+    #[test]
+    fn enrich_preserves_non_utf8_message() {
+        // 消息体含非 UTF-8 字节，必须逐字节保留
+        let mut raw = b"         1.500  1040  1040 I Tag: ".to_vec();
+        raw.extend_from_slice(&[0xff, 0xfe, 0x00]);
+        raw.push(b'\n');
+        let out = enrich(&raw, &names());
+        assert!(out.ends_with(&[0xff, 0xfe, 0x00, b'\n']), "非 UTF-8 尾部应原样保留");
+        assert!(out.windows(2).any(|w| w == b"1-")); // 1040-1040 存在
+    }
+
+    #[test]
+    fn parse_line_extracts_fields() {
+        let p = parse_line(b"         1784695527.474  1040  5062 D AGM: x\n").unwrap();
+        assert_eq!(p.ms, 1784695527474);
+        assert_eq!(p.pid, b"1040");
+        assert_eq!(p.tid, b"5062");
+        assert_eq!(p.rest, b" D AGM: x\n");
+        assert!(parse_line(b"    continuation\n").is_none());
     }
 }
