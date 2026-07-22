@@ -13,12 +13,15 @@
 
 # 调试
 
-CLI 单组件，仓库根即 cargo 工程（待建）。
+CLI 单组件，仓库根即 cargo 工程。
 
-- 类型检查：`cargo check`
-- 测试：`cargo test`  # 无真机时覆盖状态机 / `-T` 时间戳计算 / 落盘 + 心跳等纯逻辑
-- 运行：`cargo run -- <args>`  # 例 `cargo run -- --help`；接真机时枚举 `adb devices` 交互采集
-- 真机验证：拔线 10s 重插 → `events.log` 先后出现「logcat 退出 / 重启」且业务日志续增不倒灌；Ctrl-C 后本机无残留 `adb logcat` 子进程（`pgrep -f 'adb.*logcat'` 为空）；长跑数小时后心跳文件 mtime 与当前时间差在数秒内
+- 类型检查：`cargo check`（提交前另跑 `cargo clippy`，零警告）
+- 测试：`cargo test`  # 无真机时覆盖去重状态机 / epoch 解析 / 设备选择 / pid 守卫 / 格式化等纯逻辑
+- 运行：`cargo run -- <args>`  # 例 `cargo run -- logs --help`；接真机时 `cargo run -- logs -s <serial>`
+- 真机验证：
+  - 断线重连：杀掉 `adb logcat` 子进程（`pkill -f 'logcat -b all -v epoch'`）或拔线 → `events.log` 先后出现 `event=disconnect` / `event=reconnect`，业务日志续增；跨边界 `sort session-*.log | uniq -d` 应为空（不倒灌）
+  - 优雅退出：Ctrl-C（前台）或 `kill -INT/-TERM <pid>` → `events.log` 记 `event=exit`，`pgrep -f 'logcat -b all -v epoch'` 为空，`session.pid` 被清理
+  - 长跑：数小时后 `.heartbeat` mtime 与当前时间差在数秒内
 
 # 发布
 
@@ -46,8 +49,8 @@ CLI 单组件，仓库根即 cargo 工程（待建）。
 ## 3. 本机安装 + 提交
 
 ```bash
-cargo build --release                       # 产出 target/release/jj-android-logs（失败即中止）
-cp target/release/jj-android-logs ~/bin/    # 或个人 PATH 目录；升级即替换该文件
+cargo build --release                         # 产出 target/release/jj-android-device（失败即中止）
+cp target/release/jj-android-device ~/bin/    # 或个人 PATH 目录；升级即替换该文件
 git add -A
 git commit -m "release: vX.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -65,7 +68,7 @@ git push origin vX.Y.Z
 > `--force-with-lease` + 删远程 tag 会改写已推送历史；仅在「刚发布、远程未被他人拉取」时使用。
 
 ```bash
-cargo build --release && cp target/release/jj-android-logs ~/bin/
+cargo build --release && cp target/release/jj-android-device ~/bin/
 git commit --amend --no-edit
 git tag -d vX.Y.Z
 git push origin :refs/tags/vX.Y.Z

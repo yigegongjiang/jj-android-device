@@ -1,0 +1,31 @@
+[package]
+name = "jj-android-device"
+version = "0.1.0"
+edition = "2021"
+description = "Android 设备工具集：实时全量采集 logcat（断线自愈 / 防倒灌 / 优雅退出），后续扩展截图等子命令"
+license = "MIT"
+
+[[bin]]
+name = "jj-android-device"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "io-util",
+    "time",
+    "signal",
+    "sync",
+    "fs",
+] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

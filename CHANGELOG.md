@@ -11,6 +11,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-07-22
 
-尚未发布。首个采集能力交付后按 Added 起 `0.1.0`。
+### Added
+
+- `logs` 子命令：实时全量采集指定 Android 设备 logcat，逐行落盘全部可读 buffer
+- 断线自愈：连接中断自动等待设备回连续采，防倒灌不重复历史行、抖动缓冲不丢重连窗口日志
+- 优雅退出：Ctrl-C / SIGTERM 结束不留残留 `adb` 子进程；同设备同会话单例互斥
+- 设备档案 `readme.md`：首次采集前自动记录身份 / 系统 / 硬件 / 网络 / 存储 / logcat 能力等
+- 结构化终端输出：启动摘要 + 周期心跳 + 事件即时行，日志正文全量落盘不刷屏
