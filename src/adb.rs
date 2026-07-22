@@ -73,6 +73,11 @@ pub async fn pm_packages_with_uid(serial: &str) -> Result<String> {
     shell(serial, "pm list packages -U").await
 }
 
+/// `ps -A -o NAME`：设备当前全部进程名（每行一个，含首行表头 `NAME`，供 [`crate::procs`] 解析）。
+pub async fn ps_names(serial: &str) -> Result<String> {
+    shell(serial, "ps -A -o NAME").await
+}
+
 /// 读取设备当前 epoch（毫秒）。用作会话防倒灌起点：只采「此刻之后」的日志。
 ///
 /// 优先 `date +%s.%3N`（毫秒），降级 `date +%s`（秒）。设备时钟与 logcat
