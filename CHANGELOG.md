@@ -11,6 +11,13 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-07-22
+
+### Added
+
+- `netwatch` 子命令：实时监控指定应用的网络累计收发字节增量，判断端侧是否收到平台下发（无需 root）
+- 省略包名时列出「当前有网络连接的应用」交互选择；收到数据（rx 明显跳变）时高亮提示，Ctrl-C 结束并汇总本次观测
+
 ## [0.3.0] - 2026-07-22
 
 ### Added

@@ -29,6 +29,8 @@ pub enum Command {
     Logs(LogsArgs),
     /// 抓取指定 Android 设备当前屏幕，PNG 落盘到 `~/.config`
     Screenshot(ScreenshotArgs),
+    /// 实时监控某应用网络累计收发字节增量（无 root），判断端侧是否收到下发
+    Netwatch(NetwatchArgs),
 }
 
 #[derive(Args, Debug)]
@@ -41,6 +43,15 @@ pub struct LogsArgs {
 #[derive(Args, Debug)]
 pub struct ScreenshotArgs {
     /// 目标设备序列号；省略时单设备直抓、多设备交互选择
+    #[arg(short = 's', long = "serial")]
+    pub serial: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct NetwatchArgs {
+    /// 目标应用包名；省略时从「当前有网络连接的应用」中交互选择
+    pub package: Option<String>,
+    /// 目标设备序列号；省略时单设备直用、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,
 }

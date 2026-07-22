@@ -7,6 +7,16 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.4.0] - 2026-07-22
+
+### Added
+
+- `netwatch` 子命令：实时监控指定应用的网络累计收发字节增量，判断端侧是否收到平台下发（无需 root）
+  - `netwatch.rs`：`parse_uid_bytes` 仅累计 `dumpsys netstats detail` 的「UID stats」段 rb/tb（顶格段标题界定，排除 Dev/Xt/UID tag stats 避免重复计数）；`adb.rs` 加 `dumpsys_netstats`/`net_tcp_raw`/`pm_packages_with_uid` 薄封装
+  - 采样循环 `SAMPLE_INTERVAL_SECS=2`；rx 单次增量 ≥`BURST_HIGHLIGHT_BYTES=1KiB` 高亮；`tokio::signal::ctrl_c` 触发汇总退出（观测时长 + 期间累计）
+- 省略包名时列出「当前有网络连接的应用」交互选择；收到数据（rx 明显跳变）时高亮提示，Ctrl-C 结束并汇总本次观测
+  - `established_uids` 解析 `/proc/net/tcp{,6}` state=01 的 uid，`parse_pm_uids` 解析 `pm list packages -U` 建包名↔uid 映射，复用 `device::select_target` 选设备
+
 ## [0.3.0] - 2026-07-22
 
 ### Added

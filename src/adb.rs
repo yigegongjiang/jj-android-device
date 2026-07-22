@@ -57,6 +57,22 @@ pub async fn getprop(serial: &str, key: &str) -> Option<String> {
     shell_opt(serial, &format!("getprop {key}")).await
 }
 
+/// `dumpsys netstats detail` 原始输出（含各 uid 累计收发字节，供 [`crate::netwatch`] 解析）。
+pub async fn dumpsys_netstats(serial: &str) -> Result<String> {
+    shell(serial, "dumpsys netstats detail").await
+}
+
+/// `/proc/net/tcp` + `/proc/net/tcp6` 原始内容（枚举有活动连接的 uid）。
+/// 两个 `cat` 分开执行并吞掉各自 stderr，缺一不致整体失败。
+pub async fn net_tcp_raw(serial: &str) -> Result<String> {
+    shell(serial, "cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null").await
+}
+
+/// `pm list packages -U`：包名 -> uid 映射原始输出（形如 `package:com.x uid:10120`）。
+pub async fn pm_packages_with_uid(serial: &str) -> Result<String> {
+    shell(serial, "pm list packages -U").await
+}
+
 /// 读取设备当前 epoch（毫秒）。用作会话防倒灌起点：只采「此刻之后」的日志。
 ///
 /// 优先 `date +%s.%3N`（毫秒），降级 `date +%s`（秒）。设备时钟与 logcat
