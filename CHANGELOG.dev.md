@@ -7,6 +7,25 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.2.0] - 2026-07-22
+
+### Changed
+
+- 直接运行 `jj-android-device` 即开始采集，`logs` 子命令可省略
+  - `cli.rs`：`Cli` 加 `#[command(flatten)] logs` + `Option<Command>`，`resolve()` 无子命令时回落 `Command::Logs`
+
+### Removed
+
+- 移除 `--buffer-mib` / `--status-interval` / `--output-dir` 参数，行为改为内部固定（更简洁）
+  - `logs.rs` 提常量 `BUFFER_MIB=8` / `STATUS_INTERVAL_SECS=30`，输出根目录固定 `session::default_root()`；清除随之而来的死分支（buffer/心跳/output-dir 的可选逻辑）
+- 移除自动生成的 `help` 子命令（仍可用 `-h` / `--help`）
+  - `cli.rs`：`#[command(disable_help_subcommand = true)]`
+
+### Fixed
+
+- 修复安装脚本覆盖旧版后二进制运行被系统终止（exit 137）的问题
+  - `install.sh`：`cp` 原地覆写复用旧 inode，macOS code-signature 缓存与新内容不符触发 SIGKILL；改 `cp` 临时文件 + `mv -f` 换新 inode
+
 ## [0.1.0] - 2026-07-22
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "jj-android-device"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Android 设备工具集：实时全量采集 logcat（断线自愈 / 防倒灌 / 优雅退出），后续扩展截图等子命令"
 license = "MIT"

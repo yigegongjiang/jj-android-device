@@ -18,21 +18,15 @@ Android 设备工具集（`adb` 驱动，单个静态二进制，子命令形态
 ## 使用
 
 ```bash
-jj-android-device logs                 # 单设备直采；多设备弹交互选择
-jj-android-device logs -s <serial>     # 指定设备
+jj-android-device                  # 直接跑=默认 logs 子命令；单设备直采，多设备弹交互选择
+jj-android-device -s <serial>      # 指定设备
 ```
 
-前台运行，`Ctrl-C` 优雅退出；每进程采一台，常驻自行 `nohup` / `tmux`。
+- 唯一参数 `-s/--serial`（可选）；`logs` 是默认子命令，可省略。
+- 前台运行，`Ctrl-C` 优雅退出；每进程采一台，常驻自行 `nohup` / `tmux`。
+- 其余行为内部固定，不暴露参数：buffer 扩容 8MiB、心跳 30s、输出目录 `~/.config/jj-android-device/logs`。
 
-<!-- prettier-ignore -->
-| 参数 | 默认 | 说明 |
-|---|---|---|
-| `-s, --serial <SERIAL>` | 交互选择 | 目标设备序列号 |
-| `--buffer-mib <MiB>` | `8` | 会话初扩容各 logcat buffer；`0` 不扩容 |
-| `--status-interval <SEC>` | `30` | 心跳输出间隔秒；`0` 关闭 |
-| `--output-dir <DIR>` | `~/.config/jj-android-device/logs` | 输出根目录 |
-
-产物落 `<output-dir>/<serial>/`（会话日志 / 事件日志 / 心跳 / 设备档案），实时追加自行 `tail` / `rg`。终端只打启动摘要 / 周期心跳 / 事件行，不刷 logcat 正文。
+产物落 `~/.config/jj-android-device/logs/<serial>/`（会话日志 / 事件日志 / 心跳 / 设备档案），实时追加自行 `tail` / `rg`。终端只打启动摘要 / 周期心跳 / 事件行，不刷 logcat 正文。
 
 ## 架构
 

@@ -1,16 +1,26 @@
 //! 命令行接口：顶层 `jj-android-device` + 子命令。
 //!
-//! 当前仅 `logs`（实时采集）；后续可平滑新增 `screen` 等子命令。
-
-use std::path::PathBuf;
+//! `logs` 为默认子命令：省略子命令直接跑 `jj-android-device` 等价于 `jj-android-device logs`。
+//! 后续可平滑新增 `screen` 等子命令。
 
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "jj-android-device", version, about, long_about = None)]
+#[command(name = "jj-android-device", version, about, long_about = None, disable_help_subcommand = true)]
 pub struct Cli {
+    /// 省略子命令时，此处参数即传给默认的 `logs`
+    #[command(flatten)]
+    pub logs: LogsArgs,
+
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
+}
+
+impl Cli {
+    /// 归一化为待执行的子命令参数：无子命令时回落到默认的 `logs`。
+    pub fn resolve(self) -> Command {
+        self.command.unwrap_or(Command::Logs(self.logs))
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -24,16 +34,4 @@ pub struct LogsArgs {
     /// 目标设备序列号；省略时单设备直采、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,
-
-    /// 周期心跳输出间隔（秒），0 关闭周期心跳
-    #[arg(long, default_value_t = 30)]
-    pub status_interval: u64,
-
-    /// 会话开始时将各 logcat buffer 扩容到该大小（MiB），0 表示不扩容
-    #[arg(long, default_value_t = 8)]
-    pub buffer_mib: u32,
-
-    /// 输出根目录（默认 ~/.config/jj-android-device/logs）
-    #[arg(long)]
-    pub output_dir: Option<PathBuf>,
 }

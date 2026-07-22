@@ -22,7 +22,7 @@ use cli::{Cli, Command};
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let result = match cli.command {
+    let result = match cli.resolve() {
         Command::Logs(args) => logs::run(args).await,
     };
     match result {

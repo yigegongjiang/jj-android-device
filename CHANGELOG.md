@@ -11,6 +11,21 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.2.0] - 2026-07-22
+
+### Changed
+
+- 直接运行 `jj-android-device` 即开始采集，`logs` 子命令可省略
+
+### Removed
+
+- 移除 `--buffer-mib` / `--status-interval` / `--output-dir` 参数，行为改为内部固定（更简洁）
+- 移除自动生成的 `help` 子命令（仍可用 `-h` / `--help`）
+
+### Fixed
+
+- 修复安装脚本覆盖旧版后二进制运行被系统终止（exit 137）的问题
+
 ## [0.1.0] - 2026-07-22
 
 ### Added

@@ -17,6 +17,12 @@ use crate::{adb, collector, profile};
 /// collector -> sink 的有界通道容量：足够吸收突发，又对写盘阻塞形成背压。
 const CHANNEL_CAP: usize = 16_384;
 
+/// 会话初将各 logcat buffer 扩容到该大小（MiB）。内部固定值，不暴露为参数。
+const BUFFER_MIB: u32 = 8;
+
+/// 周期心跳输出间隔（秒）。内部固定值，不暴露为参数。
+const STATUS_INTERVAL_SECS: u64 = 30;
+
 pub async fn run(args: LogsArgs) -> Result<()> {
     // 0. 尽早安装关停信号处理器（SIGINT/SIGTERM），关闭「启动窗口内错过信号」的缝隙
     let (sd_tx, sd_rx) = watch::channel(false);
@@ -28,11 +34,8 @@ pub async fn run(args: LogsArgs) -> Result<()> {
     let target = select_device(devices, args.serial.as_deref())?;
     let serial = target.serial.clone();
 
-    // 2. 会话产物布局 + pid 单例守卫
-    let root = match &args.output_dir {
-        Some(p) => p.clone(),
-        None => session::default_root()?,
-    };
+    // 2. 会话产物布局 + pid 单例守卫（输出根目录固定）
+    let root = session::default_root()?;
     let sess = session::setup(&root, &serial)?;
     let _pid = PidGuard::acquire(&sess.pid_path)?;
 
@@ -41,7 +44,7 @@ pub async fn run(args: LogsArgs) -> Result<()> {
     let id = profile::identity(&serial, &target).await;
 
     // 4. 扩容 logcat buffer（best-effort）——须在取起点前，扩容可能清空 buffer
-    let (expand_ok, expand_note, buffers) = expand_buffer(&serial, args.buffer_mib).await;
+    let (expand_ok, expand_note, buffers) = expand_buffer(&serial).await;
 
     // 5. 取设备当前 epoch 作防倒灌起点（仅采此刻之后）
     let start_ms = adb::device_epoch_ms(&serial)
@@ -84,11 +87,7 @@ pub async fn run(args: LogsArgs) -> Result<()> {
     let (tx, rx) = mpsc::channel::<Msg>(CHANNEL_CAP);
 
     // 9. 启动摘要（一次性）
-    let buffer_target = if args.buffer_mib == 0 {
-        "不扩容".to_string()
-    } else {
-        format!("{}MiB", args.buffer_mib)
-    };
+    let buffer_target = format!("{BUFFER_MIB}MiB");
     report::print_startup_summary(&StartupSummary {
         version: env!("CARGO_PKG_VERSION").to_string(),
         pid: std::process::id(),
@@ -118,15 +117,11 @@ pub async fn run(args: LogsArgs) -> Result<()> {
 
     // 11. 拉起任务：sink / 周期心跳 / 信号
     let sink_handle = tokio::spawn(sink::run(rx, log_file, heartbeat, metrics.clone()));
-    let status_handle = if args.status_interval > 0 {
-        Some(tokio::spawn(report::status_task(
-            metrics.clone(),
-            Duration::from_secs(args.status_interval),
-            sd_rx.clone(),
-        )))
-    } else {
-        None
-    };
+    let status_handle = tokio::spawn(report::status_task(
+        metrics.clone(),
+        Duration::from_secs(STATUS_INTERVAL_SECS),
+        sd_rx.clone(),
+    ));
 
     // 12. 采集守护主循环（阻塞至收到关停信号）
     let collect_res = collector::run(&serial, tx, events.clone(), metrics.clone(), sd_rx.clone()).await;
@@ -134,9 +129,7 @@ pub async fn run(args: LogsArgs) -> Result<()> {
     // 13. 广播关停（覆盖 sink 异常关闭导致 collector 返回的情形），排空并汇合
     let _ = sd_tx.send(true);
     let sink_res = sink_handle.await.context("sink 任务 join 失败")?;
-    if let Some(h) = status_handle {
-        let _ = h.await;
-    }
+    let _ = status_handle.await;
     metrics.set_state(State::Stopped);
 
     // 14. 退出事件（含最终统计）
@@ -164,11 +157,8 @@ pub async fn run(args: LogsArgs) -> Result<()> {
 ///
 /// 关键：`logcat -G` 退出码不代表尺寸真的生效——部分厂商会静默限制。故回读 `-g`
 /// 与请求值比对，报告「确认」而非「已请求」，并据此决定是否触发扩容失败事件。
-async fn expand_buffer(serial: &str, mib: u32) -> (bool, String, String) {
-    if mib == 0 {
-        let sizes = adb::buffer_sizes(serial).await.unwrap_or_default();
-        return (true, "跳过（--buffer-mib 0）".to_string(), sizes);
-    }
+async fn expand_buffer(serial: &str) -> (bool, String, String) {
+    let mib = BUFFER_MIB;
     if let Err(e) = adb::set_buffer_size(serial, mib).await {
         let sizes = adb::buffer_sizes(serial).await.unwrap_or_default();
         return (false, format!("失败，降级为不扩容: {e}"), sizes);

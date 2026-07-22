@@ -1,6 +1,6 @@
 //! 会话产物布局与 pid 单例守卫。
 //!
-//! 输出根目录默认 `~/.config/jj-android-device/logs`，按设备序列号隔离子目录。
+//! 输出根目录固定 `~/.config/jj-android-device/logs`，按设备序列号隔离子目录。
 //! 同一设备同一时刻仅允许一个采集进程（pid 文件 + 存活探测）。
 
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ pub struct Session {
 
 /// 默认输出根目录：`$HOME/.config/jj-android-device/logs`。
 pub fn default_root() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("无法确定 HOME，请用 --output-dir 指定输出目录")?;
+    let home = std::env::var_os("HOME").context("无法确定 HOME 环境变量，无法定位输出目录")?;
     Ok(PathBuf::from(home)
         .join(".config")
         .join("jj-android-device")
