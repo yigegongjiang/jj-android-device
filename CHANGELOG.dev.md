@@ -7,6 +7,13 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.8.0] - 2026-07-22
+
+### Added
+
+- `logs open` 子命令：用 macOS 默认应用打开最新的日志文件，免去手动翻目录找路径
+  - `cli.rs` 顶层 `-s` 由 flatten 改内联（避 flatten+subcommand 冲突），`LogsArgs` 加 `action: Option<LogsAction>`（`Open`）；`logs.rs` 加 `open()`（扫各设备目录取时间戳最新 `session-*.log`、排除 `.events.log`，经 `open(1)` 拉起）+ `is_session_log`/跨设备选取单测
+
 ## [0.7.0] - 2026-07-22
 
 ### Added
