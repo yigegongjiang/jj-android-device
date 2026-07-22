@@ -1,8 +1,8 @@
 //! 产物路径布局与 pid 单例守卫。
 //!
 //! 配置根固定 `~/.config/jj-android-device`；`logs` 采集落 `logs/<serial>/`、
-//! `screenshot` 截屏落 `screenshots/<serial>/`，均按设备序列号隔离子目录。
-//! 同一设备同一时刻仅允许一个采集进程（pid 文件 + 存活探测）。
+//! `screenshot` 截屏落 `screenshots/<serial>/`、`netwatch` 会话落 `netwatch/<serial>/`，
+//! 均按设备序列号隔离子目录。同一设备同一时刻仅允许一个采集进程（pid 文件 + 存活探测）。
 
 use std::path::{Path, PathBuf};
 
@@ -34,6 +34,11 @@ pub fn default_root() -> Result<PathBuf> {
 /// `screenshot` 截屏产物目录：`<config_root>/screenshots/<serial>/`（未创建）。
 pub fn screenshot_dir(serial: &str) -> Result<PathBuf> {
     Ok(config_root()?.join("screenshots").join(sanitize(serial)))
+}
+
+/// `netwatch` 会话日志目录：`<config_root>/netwatch/<serial>/`（未创建）。
+pub fn netwatch_dir(serial: &str) -> Result<PathBuf> {
+    Ok(config_root()?.join("netwatch").join(sanitize(serial)))
 }
 
 /// 将序列号规整为安全的目录名（TCP 序列号含 `:` 等）。

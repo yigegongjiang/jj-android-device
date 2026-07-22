@@ -11,6 +11,13 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.6.0] - 2026-07-22
+
+### Added
+
+- `netwatch` 现同步落盘到 `~/.config/jj-android-device/netwatch/<serial>/netwatch-<时间戳>.log`，终端显示之外可事后 `tail` 追溯
+- 落盘内容与终端一致：起始信息 + 每次采样增量 + 结束汇总，实时写入
+
 ## [0.5.0] - 2026-07-22
 
 ### Changed

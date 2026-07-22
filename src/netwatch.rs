@@ -6,17 +6,21 @@
 //! 内容、不依赖应用自身日志（生产版常剥离/门控 Log）、且应用无法伪造接收字节。
 //!
 //! 仅读系统计数器，不改设备、不需 root。Ctrl-C 优雅结束并打印本次观测汇总。
+//! 输出同步双写：终端实时显示 + 落盘 `~/.config/jj-android-device/netwatch/<serial>/netwatch-<stamp>.log`
+//! （header + 每行采样 + footer 全量持久化，实时 flush 可 `tail` 追溯）。
 //! 解析类为纯函数（`parse_uid_bytes` / `established_uids` / `parse_pm_uids`），无真机可单测。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs::File;
 use std::io::{self, Write};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use chrono::Local;
 
 use crate::cli::NetwatchArgs;
-use crate::{adb, device, util};
+use crate::{adb, device, session, util};
 
 /// 采样间隔（秒）。内部固定值，不暴露为参数。
 const SAMPLE_INTERVAL_SECS: u64 = 2;
@@ -52,19 +56,30 @@ pub async fn run(args: NetwatchArgs) -> Result<()> {
         None => choose_net_active(&serial, &uid_map).await?,
     };
 
-    // 3. 首次采样作为基线
+    // 3. 打开会话日志：终端显示之外同步落盘，供事后追溯（与 logs/screenshot 一致落 ~/.config）
+    let dir = session::netwatch_dir(&serial)?;
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("创建 netwatch 输出目录失败: {}", dir.display()))?;
+    let stamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let log_path = dir.join(format!("netwatch-{stamp}.log"));
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("打开 netwatch 日志失败: {}", log_path.display()))?;
+
+    // 4. 首次采样作为基线
     let (mut prev_rx, mut prev_tx) = sample(&serial, target.uid).await?;
     let (base_rx, base_tx) = (prev_rx, prev_tx);
-    print_header(&serial, &dev, &target, prev_rx, prev_tx);
+    write_header(&mut file, &serial, &dev, &target, &log_path, prev_rx, prev_tx);
 
-    // 4. 采样循环：每隔 SAMPLE_INTERVAL_SECS 打印一次增量，Ctrl-C 结束
+    // 5. 采样循环：每隔 SAMPLE_INTERVAL_SECS 记录一次增量（终端+磁盘），Ctrl-C 结束
     let started = Instant::now();
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(SAMPLE_INTERVAL_SECS)) => {}
             _ = tokio::signal::ctrl_c() => {
-                println!();
-                print_footer(started.elapsed(), prev_rx.saturating_sub(base_rx), prev_tx.saturating_sub(base_tx));
+                write_footer(&mut file, started.elapsed(), prev_rx.saturating_sub(base_rx), prev_tx.saturating_sub(base_tx));
                 return Ok(());
             }
         }
@@ -78,17 +93,27 @@ pub async fn run(args: NetwatchArgs) -> Result<()> {
         let d_rx = rx.saturating_sub(prev_rx);
         let d_tx = tx.saturating_sub(prev_tx);
         let mark = if d_rx >= BURST_HIGHLIGHT_BYTES { "   ← 收到数据" } else { "" };
-        println!(
-            "{}  rx +{:<10} tx +{:<10}{}",
-            Local::now().format("%H:%M:%S"),
-            util::human_bytes(d_rx),
-            util::human_bytes(d_tx),
-            mark
+        emit(
+            &mut file,
+            &format!(
+                "{}  rx +{:<10} tx +{:<10}{}",
+                Local::now().format("%H:%M:%S"),
+                util::human_bytes(d_rx),
+                util::human_bytes(d_tx),
+                mark
+            ),
         );
-        let _ = io::stdout().flush();
         prev_rx = rx;
         prev_tx = tx;
     }
+}
+
+/// 同步双写一行：终端实时显示 + 追加落盘（best-effort，写盘失败不中断监控）。
+fn emit(file: &mut File, line: &str) {
+    println!("{line}");
+    let _ = io::stdout().flush();
+    let _ = writeln!(file, "{line}");
+    let _ = file.flush();
 }
 
 /// 采一次目标 uid 的累计 (rx, tx) 字节。
@@ -217,29 +242,35 @@ fn parse_pm_uids(raw: &str) -> HashMap<String, u32> {
     m
 }
 
-fn print_header(serial: &str, dev: &device::Device, t: &Target, rx: u64, tx: u64) {
-    println!("── jj-android-device netwatch ─────────────────────────────");
-    println!("device   serial={} model={} connection={}", serial, dev.model_label(), dev.connection_label());
-    println!("target   {}  (uid {})", t.label, t.uid);
-    println!(
-        "说明     每 {SAMPLE_INTERVAL_SECS}s 采样「累计收发字节」；rx 单次增量 ≥{} 高亮为“收到数据”。Ctrl-C 结束。",
-        util::human_bytes(BURST_HIGHLIGHT_BYTES)
+fn write_header(file: &mut File, serial: &str, dev: &device::Device, t: &Target, log_path: &Path, rx: u64, tx: u64) {
+    emit(file, "── jj-android-device netwatch ─────────────────────────────");
+    emit(file, &format!("device   serial={} model={} connection={}", serial, dev.model_label(), dev.connection_label()));
+    emit(file, &format!("target   {}  (uid {})", t.label, t.uid));
+    emit(
+        file,
+        &format!(
+            "说明     每 {SAMPLE_INTERVAL_SECS}s 采样「累计收发字节」；rx 单次增量 ≥{} 高亮为“收到数据”。Ctrl-C 结束。",
+            util::human_bytes(BURST_HIGHLIGHT_BYTES)
+        ),
     );
-    println!("基线     rx={}  tx={}", util::human_bytes(rx), util::human_bytes(tx));
-    println!("───────────────────────────────────────────────────────────");
-    let _ = io::stdout().flush();
+    emit(file, &format!("saved    = {}", log_path.display()));
+    emit(file, &format!("基线     rx={}  tx={}", util::human_bytes(rx), util::human_bytes(tx)));
+    emit(file, "───────────────────────────────────────────────────────────");
 }
 
-fn print_footer(dur: Duration, rx: u64, tx: u64) {
-    println!("── 结束 ────────────────────────────────────────────────────");
-    println!(
-        "观测时长 = {}   期间累计 rx=+{}  tx=+{}",
-        util::human_duration(dur),
-        util::human_bytes(rx),
-        util::human_bytes(tx)
+fn write_footer(file: &mut File, dur: Duration, rx: u64, tx: u64) {
+    emit(file, "");
+    emit(file, "── 结束 ────────────────────────────────────────────────────");
+    emit(
+        file,
+        &format!(
+            "观测时长 = {}   期间累计 rx=+{}  tx=+{}",
+            util::human_duration(dur),
+            util::human_bytes(rx),
+            util::human_bytes(tx)
+        ),
     );
-    println!("───────────────────────────────────────────────────────────");
-    let _ = io::stdout().flush();
+    emit(file, "───────────────────────────────────────────────────────────");
 }
 
 #[cfg(test)]

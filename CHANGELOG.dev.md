@@ -7,6 +7,15 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.6.0] - 2026-07-22
+
+### Added
+
+- `netwatch` 现同步落盘到 `~/.config/jj-android-device/netwatch/<serial>/netwatch-<时间戳>.log`，终端显示之外可事后 `tail` 追溯
+  - `session.rs` 加 `netwatch_dir`；`netwatch.rs` 加 `emit`（`println!` + `writeln!` 双写 + 逐行 flush），`write_header`/`write_footer` 取代 print 版；文件 `OpenOptions` append 打开，创建/打开失败即 `bail`
+- 落盘内容与终端一致：起始信息 + 每次采样增量 + 结束汇总，实时写入
+  - header 增 `saved = <path>` 行；footer 也经 `emit` 落盘
+
 ## [0.5.0] - 2026-07-22
 
 ### Changed
