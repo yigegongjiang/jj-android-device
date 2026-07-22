@@ -27,7 +27,10 @@ use cli::{Cli, Command};
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.resolve() {
-        Command::Logs(args) => logs::run(args).await,
+        Command::Logs(args) => match args.action {
+            Some(cli::LogsAction::Open) => logs::open().await,
+            None => logs::run(args).await,
+        },
         Command::Screenshot(args) => screenshot::run(args).await,
         Command::Netwatch(args) => netwatch::run(args).await,
     };
