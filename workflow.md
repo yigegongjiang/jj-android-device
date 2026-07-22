@@ -49,8 +49,7 @@ CLI 单组件，仓库根即 cargo 工程。
 ## 3. 本机安装 + 提交
 
 ```bash
-cargo build --release                         # 产出 target/release/jj-android-device（失败即中止）
-cp target/release/jj-android-device ~/bin/    # 或个人 PATH 目录；升级即替换该文件
+./install.sh                 # release 构建 + 拷二进制入 PATH（默认 ${XDG_BIN_HOME:-~/.local/bin}；失败即中止）
 git add -A
 git commit -m "release: vX.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -58,7 +57,7 @@ git push origin master
 git push origin vX.Y.Z
 ```
 
-> 首次发布前需配置远程仓库（`git remote add origin <url>`）与个人 PATH 目录（例 `~/bin/`）。
+> 首次发布前需配置远程仓库（`git remote add origin <url>`）与个人 PATH 目录（默认 `~/.local/bin/`）。
 > 他人拷入的二进制首次运行被 Gatekeeper 拦时，需 `xattr -dr com.apple.quarantine <path>`；本机自 build 无此问题。
 
 ## 4. 修上版 bug
@@ -68,7 +67,7 @@ git push origin vX.Y.Z
 > `--force-with-lease` + 删远程 tag 会改写已推送历史；仅在「刚发布、远程未被他人拉取」时使用。
 
 ```bash
-cargo build --release && cp target/release/jj-android-device ~/bin/
+./install.sh
 git commit --amend --no-edit
 git tag -d vX.Y.Z
 git push origin :refs/tags/vX.Y.Z
