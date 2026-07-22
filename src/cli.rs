@@ -31,6 +31,8 @@ pub enum Command {
     Screenshot(ScreenshotArgs),
     /// 实时监控某应用网络累计收发字节增量（无 root），判断端侧是否收到下发
     Netwatch(NetwatchArgs),
+    /// 一次性打印设备当前活跃 app 包名（默认）；`-a` 改列全部原始进程名。可选子串过滤如 `remotemanager`
+    Procs(ProcsArgs),
 }
 
 #[derive(Args, Debug)]
@@ -51,6 +53,18 @@ pub struct ScreenshotArgs {
 pub struct NetwatchArgs {
     /// 目标应用包名；省略时从「当前有网络连接的应用」中交互选择
     pub package: Option<String>,
+    /// 目标设备序列号；省略时单设备直用、多设备交互选择
+    #[arg(short = 's', long = "serial")]
+    pub serial: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProcsArgs {
+    /// 名字子串过滤（大小写不敏感）；省略时打印全部
+    pub filter: Option<String>,
+    /// 改列全部原始进程名（含系统进程 / 内核线程），而非默认的活跃 app 包名
+    #[arg(short = 'a', long = "all")]
+    pub all: bool,
     /// 目标设备序列号；省略时单设备直用、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,

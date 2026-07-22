@@ -7,6 +7,15 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.7.0] - 2026-07-22
+
+### Added
+
+- `procs` 子命令：一次性打印设备当前活跃 app 包名，快速确认某 app/服务（如 `remotemanager`）是否在跑
+  - 新增 `src/procs.rs`（`run` + 纯函数 `parse_names`/`parse_pm_names`/`active_packages`/`filter_names`）；`adb.rs` 加 `ps_names`（`ps -A -o NAME`）；`cli.rs` 加 `ProcsArgs`（位置参 `filter` + `-a/--all` + `-s`），`main.rs` 注册分发
+- 默认列活跃包名（多进程 app 归并、系统/内核进程滤除），`-a` 改列全部原始进程名；可选子串过滤（大小写不敏感），去重排序、方便管道筛选；单设备直用、多设备交互选择
+  - 默认模式：`ps` 进程名剥 `:suffix` ∩ `pm list packages`（复用 `adb::pm_packages_with_uid`）已装集合；名字落 stdout、摘要走 stderr（管道洁净，对齐 `device::prompt_choice` 约定）
+
 ## [0.6.0] - 2026-07-22
 
 ### Added
