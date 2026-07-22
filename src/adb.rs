@@ -57,9 +57,15 @@ pub async fn getprop(serial: &str, key: &str) -> Option<String> {
     shell_opt(serial, &format!("getprop {key}")).await
 }
 
-/// `dumpsys netstats detail` 原始输出（含各 uid 累计收发字节，供 [`crate::netwatch`] 解析）。
+/// 强制刷新内核网络计数后返回 `dumpsys netstats detail` 原始输出。
+///
+/// 单独读取 `detail` 只会得到系统上次 poll 的历史快照，无法用于实时监控。
 pub async fn dumpsys_netstats(serial: &str) -> Result<String> {
-    shell(serial, "dumpsys netstats detail").await
+    shell(
+        serial,
+        "dumpsys netstats --poll >/dev/null && dumpsys netstats detail",
+    )
+    .await
 }
 
 /// `/proc/net/tcp` + `/proc/net/tcp6` 原始内容（枚举有活动连接的 uid）。

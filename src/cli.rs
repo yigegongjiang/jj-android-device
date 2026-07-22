@@ -30,7 +30,7 @@ pub enum Command {
     Logs(LogsArgs),
     /// 抓取指定 Android 设备当前屏幕，PNG 落盘到 `~/.config`
     Screenshot(ScreenshotArgs),
-    /// 实时监控某应用网络累计收发字节增量（无 root），判断端侧是否收到下发
+    /// 实时监控某应用网络累计收发字节增量（无 root），观测其是否确有数据收发
     Netwatch(NetwatchArgs),
     /// 一次性打印设备当前活跃 app 包名（默认）；`-a` 改列全部原始进程名。可选子串过滤如 `remotemanager`
     Procs(ProcsArgs),
@@ -61,8 +61,12 @@ pub struct ScreenshotArgs {
 
 #[derive(Args, Debug)]
 pub struct NetwatchArgs {
-    /// 目标应用包名；省略时从「当前有网络连接的应用」中交互选择
+    /// 目标应用包名；省略时从「当前有网络连接的应用」中交互选择；与 -a 互斥
+    #[arg(conflicts_with = "all")]
     pub package: Option<String>,
+    /// 盯设备上全部 uid 的收发增量（每周期打印有增量的 uid，结束按 rx 排名）；与位置参数 <package> 互斥
+    #[arg(short = 'a', long = "all")]
+    pub all: bool,
     /// 目标设备序列号；省略时单设备直用、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,

@@ -7,6 +7,21 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.9.0] - 2026-07-22
+
+### Added
+
+- `netwatch -a`：一次盯设备上全部应用的收发字节增量（不再限单个包名），每周期按 rx 降序打印有增量的应用，Ctrl-C 结束按累计 rx 排名——直接看哪些应用在收发数据
+  - `netwatch.rs` 加 `parse_all_uid_bytes`（单次 `dumpsys netstats detail` 一并解析每个 uid 的 rb/tb，作单一解析信源，`parse_uid_bytes` 复用之）；`run` 共享设备/uid_map/日志后 `args.all` 分流到 `run_all`（`sample_all`/`build_by_uid`/`label_for_uid` 兜底系统 uid/`write_header_all`+`write_footer_all`）；`cli.rs` `NetwatchArgs` 加 `-a/--all`（与位置参 `package` `conflicts_with` 互斥）
+  - 中途新出现的 uid 视 `prev=当前值`（本周期不计），避免把历史累计误报为突发
+
+### Changed
+
+- `netwatch` 连续 4 个周期无增量后自动静默（不再刷屏/落盘一串 0），有流量即恢复；不再对排名做人为条数上限
+  - 两模式采样循环各持 `zero_streak`，`ZERO_STREAK_KEEP=4`：全 0 递增、`>KEEP` 即 `continue` 跳过打印/落盘，任一增量归零恢复；移除原 `TOP_UIDS=20` 排名上限（`totals` 仅累加有增量 uid，无刷屏风险），`write_footer_all` 全量列出
+- `netwatch` 每次采样先执行 `dumpsys netstats --poll`，再读取 `detail`；修复历史快照不更新导致实时流量长期漏报
+  - 首次基线已 poll，中途新 UID 从 0 计算增量，保留新 App 的首波流量
+
 ## [0.8.0] - 2026-07-22
 
 ### Added
@@ -46,7 +61,7 @@
 
 ### Added
 
-- `netwatch` 子命令：实时监控指定应用的网络累计收发字节增量，判断端侧是否收到平台下发（无需 root）
+- `netwatch` 子命令：实时监控指定应用的网络累计收发字节增量，观测其是否确有数据收发（无需 root）
   - `netwatch.rs`：`parse_uid_bytes` 仅累计 `dumpsys netstats detail` 的「UID stats」段 rb/tb（顶格段标题界定，排除 Dev/Xt/UID tag stats 避免重复计数）；`adb.rs` 加 `dumpsys_netstats`/`net_tcp_raw`/`pm_packages_with_uid` 薄封装
   - 采样循环 `SAMPLE_INTERVAL_SECS=2`；rx 单次增量 ≥`BURST_HIGHLIGHT_BYTES=1KiB` 高亮；`tokio::signal::ctrl_c` 触发汇总退出（观测时长 + 期间累计）
 - 省略包名时列出「当前有网络连接的应用」交互选择；收到数据（rx 明显跳变）时高亮提示，Ctrl-C 结束并汇总本次观测
