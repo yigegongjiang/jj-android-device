@@ -1,0 +1,8 @@
+# 规划/设计文档，仅本地保留，不入库
+# plans/
+
+# Rust 构建产物
+/target/
+
+# macOS
+.DS_Store
