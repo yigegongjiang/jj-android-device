@@ -1,9 +1,10 @@
 //! `logs` 子命令编排：设备选择 -> 会话准备 -> 档案 -> 启动摘要 -> 采集守护 -> 优雅退出。
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tokio::sync::{mpsc, watch};
 
 use crate::cli::LogsArgs;
@@ -207,4 +208,77 @@ fn spawn_signal_watcher(sd_tx: Arc<watch::Sender<bool>>) -> Result<()> {
         let _ = sd_tx.send(true);
     });
     Ok(())
+}
+
+/// `logs open`：用 macOS 默认应用打开最新的会话日志文件（跨全部设备取最新）。
+pub async fn open() -> Result<()> {
+    let root = session::default_root()?;
+    let path = latest_session_log(&root).ok_or_else(|| {
+        anyhow::anyhow!("在 {} 下未找到任何会话日志（先跑一次 logs 采集）", root.display())
+    })?;
+    let status = tokio::process::Command::new("open")
+        .arg(&path)
+        .status()
+        .await
+        .with_context(|| format!("调用 open 打开日志失败: {}", path.display()))?;
+    if !status.success() {
+        bail!("open 退出码非零（{status}）: {}", path.display());
+    }
+    println!("opened {}", path.display());
+    Ok(())
+}
+
+/// 扫描 `<root>/<serial>/` 下所有 `session-<stamp>.log`（排除 `.events.log`），取时间戳
+/// 文件名字典序最大者（定宽 `%Y%m%d-%H%M%S`，字典序即时序 = 最新会话）。无则 None。
+fn latest_session_log(root: &Path) -> Option<PathBuf> {
+    let mut best: Option<(String, PathBuf)> = None; // (文件名, 全路径)
+    for dev in std::fs::read_dir(root).ok()?.flatten() {
+        if !dev.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(dev.path()) else { continue };
+        for f in files.flatten() {
+            let name = f.file_name().to_string_lossy().into_owned();
+            if !is_session_log(&name) {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(bn, _)| name > *bn) {
+                best = Some((name, f.path()));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// 主会话日志文件名判定：`session-<stamp>.log`，排除 `.events.log` 旁文件与 pid/readme。
+fn is_session_log(name: &str) -> bool {
+    name.starts_with("session-") && name.ends_with(".log") && !name.ends_with(".events.log")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_log_filter() {
+        assert!(is_session_log("session-20260722-141100.log"));
+        assert!(!is_session_log("session-20260722-141100.events.log"));
+        assert!(!is_session_log("session.pid"));
+        assert!(!is_session_log("readme.md"));
+    }
+
+    #[test]
+    fn latest_picks_newest_across_devices() {
+        let root = std::env::temp_dir().join(format!("jjad-open-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (a, b) = (root.join("devA"), root.join("devB"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("session-20260722-100000.log"), "").unwrap();
+        std::fs::write(a.join("session-20260722-100000.events.log"), "").unwrap(); // 应被排除
+        std::fs::write(b.join("session-20260722-235959.log"), "").unwrap(); // 最新
+        let got = latest_session_log(&root).unwrap();
+        assert_eq!(got.file_name().unwrap(), "session-20260722-235959.log");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

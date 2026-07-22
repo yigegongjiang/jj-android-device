@@ -8,9 +8,9 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "jj-android-device", version, about, long_about = None, disable_help_subcommand = true)]
 pub struct Cli {
-    /// 省略子命令时，此处参数即传给默认的 `logs`
-    #[command(flatten)]
-    pub logs: LogsArgs,
+    /// 省略子命令时，此 serial 即传给默认的 `logs`
+    #[arg(short = 's', long = "serial")]
+    pub serial: Option<String>,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -19,7 +19,8 @@ pub struct Cli {
 impl Cli {
     /// 归一化为待执行的子命令参数：无子命令时回落到默认的 `logs`。
     pub fn resolve(self) -> Command {
-        self.command.unwrap_or(Command::Logs(self.logs))
+        self.command
+            .unwrap_or(Command::Logs(LogsArgs { serial: self.serial, action: None }))
     }
 }
 
@@ -40,6 +41,15 @@ pub struct LogsArgs {
     /// 目标设备序列号；省略时单设备直采、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,
+    /// 省略时执行采集；`open` 用 macOS 默认应用打开最新日志文件
+    #[command(subcommand)]
+    pub action: Option<LogsAction>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum LogsAction {
+    /// 用 macOS 默认应用打开最新的会话日志文件
+    Open,
 }
 
 #[derive(Args, Debug)]
