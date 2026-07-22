@@ -1,7 +1,7 @@
 //! 命令行接口：顶层 `jj-android-device` + 子命令。
 //!
 //! `logs` 为默认子命令：省略子命令直接跑 `jj-android-device` 等价于 `jj-android-device logs`。
-//! 后续可平滑新增 `screen` 等子命令。
+//! `screenshot` 为一次性截屏子命令。后续可平滑新增更多子命令。
 
 use clap::{Args, Parser, Subcommand};
 
@@ -27,11 +27,20 @@ impl Cli {
 pub enum Command {
     /// 实时全量采集指定 Android 设备的 logcat（断线自愈 / 防倒灌 / 优雅退出）
     Logs(LogsArgs),
+    /// 抓取指定 Android 设备当前屏幕，PNG 落盘到 `~/.config`
+    Screenshot(ScreenshotArgs),
 }
 
 #[derive(Args, Debug)]
 pub struct LogsArgs {
     /// 目标设备序列号；省略时单设备直采、多设备交互选择
+    #[arg(short = 's', long = "serial")]
+    pub serial: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ScreenshotArgs {
+    /// 目标设备序列号；省略时单设备直抓、多设备交互选择
     #[arg(short = 's', long = "serial")]
     pub serial: Option<String>,
 }

@@ -122,6 +122,25 @@ fn parse_size(s: &str) -> Option<u64> {
     Some((num * mult) as u64)
 }
 
+/// 截屏：`adb -s <serial> exec-out screencap -p`，返回原始 PNG 字节。
+///
+/// 用 `exec-out` 而非 `shell`：绕过 PTY，stdout 为裸二进制，规避 `\n`->`\r\n`
+/// 转换损坏 PNG（`adb shell screencap` 的经典坑）。stdout 可能含大量非 UTF-8
+/// 字节，故不复用 [`run`]（其做 trim + utf8 lossy），单独取原始 bytes。
+pub async fn screencap_png(serial: &str) -> Result<Vec<u8>> {
+    let out = Command::new("adb")
+        .args(["-s", serial, "exec-out", "screencap", "-p"])
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("无法执行 adb exec-out screencap（本机是否已安装 adb？）")?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        bail!("adb exec-out screencap 失败: {}", err.trim());
+    }
+    Ok(out.stdout)
+}
+
 /// 拉起 `adb logcat` 流式子进程。
 ///
 /// - `-b all`：覆盖 main/system/crash/events/radio/security 等全部可读 buffer

@@ -1,14 +1,13 @@
 //! `logs` 子命令编排：设备选择 -> 会话准备 -> 档案 -> 启动摘要 -> 采集守护 -> 优雅退出。
 
-use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use tokio::sync::{mpsc, watch};
 
 use crate::cli::LogsArgs;
-use crate::device::{self, Device, Selection};
+use crate::device;
 use crate::report::{self, EventLog, Metrics, StartupSummary, State};
 use crate::session::{self, PidGuard};
 use crate::sink::{self, Msg};
@@ -31,7 +30,7 @@ pub async fn run(args: LogsArgs) -> Result<()> {
 
     // 1. 选择目标设备
     let devices = device::list().await.context("枚举 adb 设备失败")?;
-    let target = select_device(devices, args.serial.as_deref())?;
+    let target = device::select_target(devices, args.serial.as_deref())?;
     let serial = target.serial.clone();
 
     // 2. 会话产物布局 + pid 单例守卫（输出根目录固定）
@@ -178,37 +177,6 @@ async fn expand_buffer(serial: &str) -> (bool, String, String) {
         ),
         None => (true, format!("已请求 {mib}MiB/buffer（无法回读校验实际大小）"), sizes),
     }
-}
-
-/// 设备选择：单台直采、多台交互挑选、异常给出清晰原因。
-fn select_device(devices: Vec<Device>, requested: Option<&str>) -> Result<Device> {
-    match device::resolve(devices, requested) {
-        Selection::One(d) => Ok(d),
-        Selection::Choose(list) => prompt_choice(list),
-        Selection::NoneOnline => {
-            bail!("未发现处于 device 状态的设备；检查连线与授权后重试（adb devices）")
-        }
-        Selection::NotFound(s) => bail!("未找到序列号为 {s} 的设备"),
-        Selection::Unusable(d) => {
-            bail!("设备 {} 当前状态为 {}，无法采集（需在设备端授权，使其显示为 device）", d.serial, d.state)
-        }
-    }
-}
-
-/// 多设备交互挑选（提示走 stderr，保持 stdout 结构化输出洁净）。
-fn prompt_choice(list: Vec<Device>) -> Result<Device> {
-    eprintln!("检测到多台在线设备，请选择目标：");
-    for (i, d) in list.iter().enumerate() {
-        eprintln!("  [{}] {} ({}) {}", i + 1, d.serial, d.model_label(), d.connection_label());
-    }
-    eprint!("输入序号 (1-{}): ", list.len());
-    io::stderr().flush().ok();
-
-    let mut line = String::new();
-    io::stdin().read_line(&mut line).context("读取选择输入失败")?;
-    let n: usize = line.trim().parse().context("无效序号")?;
-    let idx = n.checked_sub(1).context("序号需从 1 起")?;
-    list.get(idx).cloned().context("序号超出范围")
 }
 
 /// 同步安装关停信号处理器（SIGINT=Ctrl-C / SIGTERM=`nohup` 场景 kill），

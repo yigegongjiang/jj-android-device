@@ -16,12 +16,13 @@
 CLI 单组件，仓库根即 cargo 工程。
 
 - 类型检查：`cargo check`（提交前另跑 `cargo clippy`，零警告）
-- 测试：`cargo test`  # 无真机时覆盖去重状态机 / epoch 解析 / 设备选择 / pid 守卫 / 格式化等纯逻辑
-- 运行：`cargo run -- <args>`  # 例 `cargo run -- logs --help`；接真机时 `cargo run -- logs -s <serial>`
+- 测试：`cargo test`  # 无真机时覆盖去重状态机 / epoch 解析 / 设备选择 / pid 守卫 / PNG 头解析 / 格式化等纯逻辑
+- 运行：`cargo run -- <args>`  # 例 `cargo run -- logs --help`；接真机时 `cargo run -- logs -s <serial>` / `cargo run -- screenshot -s <serial>`
 - 真机验证：
   - 断线重连：杀掉 `adb logcat` 子进程（`pkill -f 'logcat -b all -v epoch'`）或拔线 → `events.log` 先后出现 `event=disconnect` / `event=reconnect`，业务日志续增；跨边界 `sort session-*.log | uniq -d` 应为空（不倒灌）
   - 优雅退出：Ctrl-C（前台）或 `kill -INT/-TERM <pid>` → `events.log` 记 `event=exit`，`pgrep -f 'logcat -b all -v epoch'` 为空，`session.pid` 被清理
   - 长跑：数小时后 `.heartbeat` mtime 与当前时间差在数秒内
+  - 截屏：`cargo run -- screenshot -s <serial>` → `file <落盘 png>` 报 `PNG image data, WxH`，分辨率与摘要一致
 
 # 发布
 

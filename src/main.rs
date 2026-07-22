@@ -1,6 +1,6 @@
 //! jj-android-device：Android 设备工具集入口。
 //!
-//! 顶层为子命令分发；当前提供 `logs`（实时全量采集 logcat），后续可扩展 `screen` 等。
+//! 顶层为子命令分发；提供 `logs`（实时全量采集 logcat）与 `screenshot`（一次性截屏），后续可继续扩展。
 
 mod adb;
 mod cli;
@@ -9,6 +9,7 @@ mod device;
 mod logs;
 mod profile;
 mod report;
+mod screenshot;
 mod session;
 mod sink;
 mod util;
@@ -24,6 +25,7 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.resolve() {
         Command::Logs(args) => logs::run(args).await,
+        Command::Screenshot(args) => screenshot::run(args).await,
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -1,6 +1,7 @@
-//! 会话产物布局与 pid 单例守卫。
+//! 产物路径布局与 pid 单例守卫。
 //!
-//! 输出根目录固定 `~/.config/jj-android-device/logs`，按设备序列号隔离子目录。
+//! 配置根固定 `~/.config/jj-android-device`；`logs` 采集落 `logs/<serial>/`、
+//! `screenshot` 截屏落 `screenshots/<serial>/`，均按设备序列号隔离子目录。
 //! 同一设备同一时刻仅允许一个采集进程（pid 文件 + 存活探测）。
 
 use std::path::{Path, PathBuf};
@@ -19,13 +20,20 @@ pub struct Session {
     pub started_local: String,
 }
 
-/// 默认输出根目录：`$HOME/.config/jj-android-device/logs`。
-pub fn default_root() -> Result<PathBuf> {
+/// 配置根目录：`$HOME/.config/jj-android-device`（各子命令产物的公共父目录）。
+pub fn config_root() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("无法确定 HOME 环境变量，无法定位输出目录")?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("jj-android-device")
-        .join("logs"))
+    Ok(PathBuf::from(home).join(".config").join("jj-android-device"))
+}
+
+/// `logs` 采集输出根目录：`<config_root>/logs`。
+pub fn default_root() -> Result<PathBuf> {
+    Ok(config_root()?.join("logs"))
+}
+
+/// `screenshot` 截屏产物目录：`<config_root>/screenshots/<serial>/`（未创建）。
+pub fn screenshot_dir(serial: &str) -> Result<PathBuf> {
+    Ok(config_root()?.join("screenshots").join(sanitize(serial)))
 }
 
 /// 将序列号规整为安全的目录名（TCP 序列号含 `:` 等）。

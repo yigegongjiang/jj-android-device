@@ -3,8 +3,10 @@
 //! 选择逻辑 [`resolve`] 为纯函数（输入设备列表 + 请求序列号），便于在无真机时
 //! 用合成的 `adb devices -l` 文本单测多设备场景。交互式挑选留给调用方（IO 隔离）。
 
+use std::io::{self, Write};
+
 use crate::adb;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 
 /// 一台 adb 设备的连接信息（来自 `adb devices -l`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +138,37 @@ pub fn resolve(devices: Vec<Device>, requested: Option<&str>) -> Selection {
 /// 拉取并解析当前设备列表。
 pub async fn list() -> Result<Vec<Device>> {
     Ok(parse_devices(&adb::devices_raw().await?))
+}
+
+/// 跨子命令共享的设备选择：单台直用、多台交互挑选、异常给出清晰原因。
+pub fn select_target(devices: Vec<Device>, requested: Option<&str>) -> Result<Device> {
+    match resolve(devices, requested) {
+        Selection::One(d) => Ok(d),
+        Selection::Choose(list) => prompt_choice(list),
+        Selection::NoneOnline => {
+            bail!("未发现处于 device 状态的设备；检查连线与授权后重试（adb devices）")
+        }
+        Selection::NotFound(s) => bail!("未找到序列号为 {s} 的设备"),
+        Selection::Unusable(d) => {
+            bail!("设备 {} 当前状态为 {}，无法操作（需在设备端授权，使其显示为 device）", d.serial, d.state)
+        }
+    }
+}
+
+/// 多设备交互挑选（提示走 stderr，保持 stdout 洁净供结构化/二进制输出）。
+fn prompt_choice(list: Vec<Device>) -> Result<Device> {
+    eprintln!("检测到多台在线设备，请选择目标：");
+    for (i, d) in list.iter().enumerate() {
+        eprintln!("  [{}] {} ({}) {}", i + 1, d.serial, d.model_label(), d.connection_label());
+    }
+    eprint!("输入序号 (1-{}): ", list.len());
+    io::stderr().flush().ok();
+
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).context("读取选择输入失败")?;
+    let n: usize = line.trim().parse().context("无效序号")?;
+    let idx = n.checked_sub(1).context("序号需从 1 起")?;
+    list.get(idx).cloned().context("序号超出范围")
 }
 
 #[cfg(test)]

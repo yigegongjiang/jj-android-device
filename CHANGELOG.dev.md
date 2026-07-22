@@ -7,6 +7,16 @@
 
 # Changelog (developer, follow [CHANGELOG.md](./CHANGELOG.md))
 
+## [0.3.0] - 2026-07-22
+
+### Added
+
+- `screenshot` 子命令：抓取设备当前屏幕存为 PNG，落 `~/.config/jj-android-device/screenshots/<serial>/`
+  - `adb.rs` 加 `screencap_png`（`exec-out screencap -p`，绕 PTY 取裸二进制，不复用做 utf8 trim 的 `run`）；`screenshot.rs` 编排，`png_dimensions` 从 IHDR 解析分辨率
+  - 设备选择逻辑 `select_target`/`prompt_choice` 从 `logs.rs` 提到 `device.rs` 跨子命令共享；`session.rs` 抽 `config_root()` + `screenshot_dir()`
+- 单设备直抓、多设备交互选择；界面禁止截屏（安全窗口）时明确报错而非落坏文件
+  - PNG magic-byte（`\x89PNG\r\n\x1a\n`）校验为捕获路径唯一运行时护栏（`cargo test` 覆盖不到），非 PNG 即 `bail`
+
 ## [0.2.0] - 2026-07-22
 
 ### Changed

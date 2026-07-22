@@ -11,6 +11,13 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-07-22
+
+### Added
+
+- `screenshot` 子命令：抓取设备当前屏幕存为 PNG，落 `~/.config/jj-android-device/screenshots/<serial>/`
+- 单设备直抓、多设备交互选择；界面禁止截屏（安全窗口）时明确报错而非落坏文件
+
 ## [0.2.0] - 2026-07-22
 
 ### Changed
